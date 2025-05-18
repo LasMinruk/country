@@ -10,7 +10,11 @@ import "react-tooltip/dist/react-tooltip.css";
 const Home = () => {
   const [countries, setCountries] = useState([]);
   const [filtered, setFiltered] = useState([]);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm, setSearchTerm] = useState(() => {
+    // Read search term from localStorage on component mount
+    const savedSearchTerm = localStorage.getItem('searchTerm');
+    return savedSearchTerm || "";
+  });
   const [region, setRegion] = useState("");
   const [language, setLanguage] = useState("");
   const [currency, setCurrency] = useState("");
@@ -70,16 +74,25 @@ const Home = () => {
       .get("https://restcountries.com/v3.1/all")
       .then((res) => {
         setCountries(res.data);
-        setFiltered(res.data);
+        // Apply initial filter based on searchTerm from localStorage
+        const savedSearchTerm = localStorage.getItem('searchTerm') || "";
+        const initialFiltered = res.data.filter((c) =>
+          c.name.common.toLowerCase().includes(savedSearchTerm.toLowerCase())
+        );
+        setFiltered(initialFiltered);
         setLoading(false);
       })
       .catch((err) => {
         console.error("Error fetching countries:", err);
         setLoading(false);
       });
-  }, []);
+  }, []); // Empty dependency array to run only once on mount
 
+  // Effect to update filtered countries and save searchTerm to localStorage
   useEffect(() => {
+    // Save search term to localStorage whenever it changes
+    localStorage.setItem('searchTerm', searchTerm);
+
     let result = countries;
 
     // Filter countries based on search term
