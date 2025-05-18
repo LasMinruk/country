@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { FiArrowLeft } from "react-icons/fi";
+import { FiArrowLeft, FiDownload, FiFileText } from "react-icons/fi";
 import InfoCard from "../components/InfoCard";
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 // Page component for displaying detailed country information
 const CountryDetail = () => {
@@ -11,6 +13,297 @@ const CountryDetail = () => {
   const [country, setCountry] = useState(null);
   const [borderCountries, setBorderCountries] = useState([]);
   const [error, setError] = useState(false);
+  const reportRef = useRef(null);
+
+  // Function to handle flag download
+  const handleDownloadFlag = async () => {
+    if (!country?.flags) return;
+    
+    const flagUrl = country.flags.png;
+    const fileName = `${country.name.common.toLowerCase().replace(/\s+/g, '-')}-flag.png`;
+    
+    try {
+      const response = await fetch(flagUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error downloading flag:', error);
+    }
+  };
+
+  // Function to generate PDF report
+  const generateReport = async () => {
+    if (!country) return;
+
+    try {
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      let yOffset = 20; // Vertical offset for content
+
+      // Add Header
+      pdf.setFontSize(24);
+      pdf.setTextColor(26, 54, 93); // #1a365d
+      pdf.text('Country Report', pdfWidth / 2, yOffset, { align: 'center' });
+      yOffset += 15;
+      pdf.setFontSize(18);
+      pdf.setTextColor(45, 55, 72); // #2d3748
+      pdf.text(country.name.common, pdfWidth / 2, yOffset, { align: 'center' });
+      yOffset += 8;
+      pdf.setFontSize(14);
+      pdf.setTextColor(74, 85, 104); // #4a5568
+      pdf.text(country.name.official, pdfWidth / 2, yOffset, { align: 'center', fontStyle: 'italic' });
+      yOffset += 20;
+
+      // Add Flag Image
+      if (country.flags?.png) {
+        const imgData = await fetch(country.flags.png)
+          .then(response => response.blob())
+          .then(blob => new Promise(resolve => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.readAsDataURL(blob);
+          }));
+
+        const img = new Image();
+        img.onload = () => {
+          const imgWidth = 100; // Desired image width in mm
+          const imgHeight = (img.naturalHeight * imgWidth) / img.naturalWidth;
+          const imgX = (pdfWidth - imgWidth) / 2; // Center the image
+          pdf.addImage(imgData, 'PNG', imgX, yOffset, imgWidth, imgHeight);
+          yOffset += imgHeight + 10;
+
+          pdf.setFontSize(10);
+          pdf.setTextColor(113, 128, 144); // #718096
+          pdf.text(`Official flag of ${country.name.common}`, pdfWidth / 2, yOffset, { align: 'center' });
+          yOffset += 15;
+
+          // Add Basic Information
+          pdf.setFontSize(16);
+          pdf.setTextColor(45, 55, 72); // #2d3748
+          pdf.text('Basic Information', 20, yOffset);
+          yOffset += 8;
+
+          pdf.setFontSize(12);
+          pdf.setTextColor(74, 85, 104); // #4a5568
+          const basicInfo = [
+            `Capital: ${country.capital?.[0] || "N/A"}`,
+            `Region: ${country.region}`,
+            `Subregion: ${country.subregion || "N/A"}`,
+            `Population: ${country.population.toLocaleString()}`,
+            `Area: ${country.area.toLocaleString()} km²`,
+            `Timezones: ${country.timezones?.join(", ")}`,
+          ];
+          basicInfo.forEach((item, index) => {
+            const x = 20 + (index % 2) * (pdfWidth / 2 - 20);
+            const y = yOffset + Math.floor(index / 2) * 10;
+            pdf.text(item, x, y);
+          });
+          yOffset += Math.ceil(basicInfo.length / 2) * 10 + 10;
+
+          // Add Cultural Information
+          pdf.setFontSize(16);
+          pdf.setTextColor(45, 55, 72); // #2d3748
+          pdf.text('Cultural Information', 20, yOffset);
+          yOffset += 8;
+
+          pdf.setFontSize(12);
+          pdf.setTextColor(74, 85, 104); // #4a5568
+          pdf.text(`Languages: ${languageList}`, 20, yOffset);
+          yOffset += 8;
+          pdf.text(`Currencies: ${currencyList}`, 20, yOffset);
+          yOffset += 15;
+
+          // Add Border Countries
+          if (borderCountries.length > 0) {
+            pdf.setFontSize(16);
+            pdf.setTextColor(45, 55, 72); // #2d3748
+            pdf.text('Border Countries', 20, yOffset);
+            yOffset += 8;
+
+            pdf.setFontSize(12);
+            pdf.setTextColor(74, 85, 104); // #4a5568
+            const borderCountryNames = borderCountries.map(b => b.name.common);
+            const borderText = borderCountryNames.join(', ');
+            const textLines = pdf.splitTextToSize(borderText, pdfWidth - 40);
+            pdf.text(textLines, 20, yOffset);
+            yOffset += textLines.length * 7 + 10; // Adjust line height
+          }
+
+          // Add Footer
+          pdf.setFontSize(10);
+          pdf.setTextColor(113, 128, 144); // #718096
+          pdf.text(`Generated on ${new Date().toLocaleString()}`, pdfWidth / 2, pdf.internal.pageSize.getHeight() - 15, { align: 'center' });
+          pdf.text('Data source: REST Countries API', pdfWidth / 2, pdf.internal.pageSize.getHeight() - 10, { align: 'center' });
+
+          if (country.maps?.googleMaps) {
+             pdf.setTextColor(66, 153, 225); // #4299e1
+             pdf.textWithLink('View on Google Maps', pdfWidth / 2, pdf.internal.pageSize.getHeight() - 5, { url: country.maps.googleMaps, align: 'center' });
+          }
+
+          // Save the PDF
+          pdf.save(`${country.name.common.toLowerCase().replace(/\s+/g, '-')}-report.pdf`);
+        };
+
+        img.onerror = (error) => {
+          console.error('Error loading flag image for PDF:', error);
+          alert('Error loading flag image. PDF report may be incomplete.');
+          // Continue saving PDF even if image fails to load
+           // Add Basic Information (repeated from inside img.onload)
+          pdf.setFontSize(16);
+          pdf.setTextColor(45, 55, 72); // #2d3748
+          pdf.text('Basic Information', 20, yOffset);
+          yOffset += 8;
+
+          pdf.setFontSize(12);
+          pdf.setTextColor(74, 85, 104); // #4a5568
+          const basicInfo = [
+            `Capital: ${country.capital?.[0] || "N/A"}`,
+            `Region: ${country.region}`,
+            `Subregion: ${country.subregion || "N/A"}`,
+            `Population: ${country.population.toLocaleString()}`,
+            `Area: ${country.area.toLocaleString()} km²`,
+            `Timezones: ${country.timezones?.join(", ")}`,
+          ];
+          basicInfo.forEach((item, index) => {
+            const x = 20 + (index % 2) * (pdfWidth / 2 - 20);
+            const y = yOffset + Math.floor(index / 2) * 10;
+            pdf.text(item, x, y);
+          });
+          yOffset += Math.ceil(basicInfo.length / 2) * 10 + 10;
+
+          // Add Cultural Information (repeated from inside img.onload)
+          pdf.setFontSize(16);
+          pdf.setTextColor(45, 55, 72); // #2d3748
+          pdf.text('Cultural Information', 20, yOffset);
+          yOffset += 8;
+
+          pdf.setFontSize(12);
+          pdf.setTextColor(74, 85, 104); // #4a5568
+          pdf.text(`Languages: ${languageList}`, 20, yOffset);
+          yOffset += 8;
+          pdf.text(`Currencies: ${currencyList}`, 20, yOffset);
+          yOffset += 15;
+
+          // Add Border Countries (repeated from inside img.onload)
+          if (borderCountries.length > 0) {
+            pdf.setFontSize(16);
+            pdf.setTextColor(45, 55, 72); // #2d3748
+            pdf.text('Border Countries', 20, yOffset);
+            yOffset += 8;
+
+            pdf.setFontSize(12);
+            pdf.setTextColor(74, 85, 104); // #4a5568
+            const borderCountryNames = borderCountries.map(b => b.name.common);
+            const borderText = borderCountryNames.join(', ');
+            const textLines = pdf.splitTextToSize(borderText, pdfWidth - 40);
+            pdf.text(textLines, 20, yOffset);
+            yOffset += textLines.length * 7 + 10; // Adjust line height
+          }
+
+          // Add Footer (repeated from inside img.onload)
+          pdf.setFontSize(10);
+          pdf.setTextColor(113, 128, 144); // #718096
+          pdf.text(`Generated on ${new Date().toLocaleString()}`, pdfWidth / 2, pdf.internal.pageSize.getHeight() - 15, { align: 'center' });
+          pdf.text('Data source: REST Countries API', pdfWidth / 2, pdf.internal.pageSize.getHeight() - 10, { align: 'center' });
+
+          if (country.maps?.googleMaps) {
+             pdf.setTextColor(66, 153, 225); // #4299e1
+             pdf.textWithLink('View on Google Maps', pdfWidth / 2, pdf.internal.pageSize.getHeight() - 5, { url: country.maps.googleMaps, align: 'center' });
+          }
+
+          // Save the PDF
+          pdf.save(`${country.name.common.toLowerCase().replace(/\s+/g, '-')}-report.pdf`);
+        };
+
+        img.crossOrigin = 'Anonymous'; // Handle CORS for the image
+        img.src = imgData; // Set the source to the data URL
+
+      } else {
+         // If no flag image, add the rest of the content immediately
+         // Add Basic Information
+          pdf.setFontSize(16);
+          pdf.setTextColor(45, 55, 72); // #2d3748
+          pdf.text('Basic Information', 20, yOffset);
+          yOffset += 8;
+
+          pdf.setFontSize(12);
+          pdf.setTextColor(74, 85, 104); // #4a5568
+          const basicInfo = [
+            `Capital: ${country.capital?.[0] || "N/A"}`,
+            `Region: ${country.region}`,
+            `Subregion: ${country.subregion || "N/A"}`,
+            `Population: ${country.population.toLocaleString()}`,
+            `Area: ${country.area.toLocaleString()} km²`,
+            `Timezones: ${country.timezones?.join(", ")}`,
+          ];
+          basicInfo.forEach((item, index) => {
+            const x = 20 + (index % 2) * (pdfWidth / 2 - 20);
+            const y = yOffset + Math.floor(index / 2) * 10;
+            pdf.text(item, x, y);
+          });
+          yOffset += Math.ceil(basicInfo.length / 2) * 10 + 10;
+
+          // Add Cultural Information
+          pdf.setFontSize(16);
+          pdf.setTextColor(45, 55, 72); // #2d3748
+          pdf.text('Cultural Information', 20, yOffset);
+          yOffset += 8;
+
+          pdf.setFontSize(12);
+          pdf.setTextColor(74, 85, 104); // #4a5568
+          pdf.text(`Languages: ${languageList}`, 20, yOffset);
+          yOffset += 8;
+          pdf.text(`Currencies: ${currencyList}`, 20, yOffset);
+          yOffset += 15;
+
+          // Add Border Countries
+          if (borderCountries.length > 0) {
+            pdf.setFontSize(16);
+            pdf.setTextColor(45, 55, 72); // #2d3748
+            pdf.text('Border Countries', 20, yOffset);
+            yOffset += 8;
+
+            pdf.setFontSize(12);
+            pdf.setTextColor(74, 85, 104); // #4a5568
+            const borderCountryNames = borderCountries.map(b => b.name.common);
+            const borderText = borderCountryNames.join(', ');
+            const textLines = pdf.splitTextToSize(borderText, pdfWidth - 40);
+            pdf.text(textLines, 20, yOffset);
+            yOffset += textLines.length * 7 + 10; // Adjust line height
+          }
+
+          // Add Footer
+          pdf.setFontSize(10);
+          pdf.setTextColor(113, 128, 144); // #718096
+          pdf.text(`Generated on ${new Date().toLocaleString()}`, pdfWidth / 2, pdf.internal.pageSize.getHeight() - 15, { align: 'center' });
+          pdf.text('Data source: REST Countries API', pdfWidth / 2, pdf.internal.pageSize.getHeight() - 10, { align: 'center' });
+
+          if (country.maps?.googleMaps) {
+             pdf.setTextColor(66, 153, 225); // #4299e1
+             pdf.textWithLink('View on Google Maps', pdfWidth / 2, pdf.internal.pageSize.getHeight() - 5, { url: country.maps.googleMaps, align: 'center' });
+          }
+
+          // Save the PDF
+          pdf.save(`${country.name.common.toLowerCase().replace(/\s+/g, '-')}-report.pdf`);
+      }
+
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Error generating PDF. Please try again.');
+    }
+  };
 
   // Fetch country details and border countries
   useEffect(() => {
@@ -108,12 +401,22 @@ const CountryDetail = () => {
           {/* Flag */}
           <div className="flex justify-center mb-8">
             <div className="bg-gradient-to-br from-blue-50 to-white p-4 rounded-xl shadow-md w-full max-w-xl border border-blue-100">
-              <div className="overflow-hidden rounded-md">
+              <div className="overflow-hidden rounded-md relative">
                 <img
                   src={flags?.svg || flags?.png}
                   alt={`${name.common} flag`}
                   className="w-full h-[240px] object-contain hover:scale-105 transition-transform duration-300 ease-in-out"
                 />
+                <div className="absolute bottom-4 right-4">
+                  <button
+                    onClick={handleDownloadFlag}
+                    className="bg-white/90 hover:bg-white text-gray-700 px-3 py-2 rounded-lg shadow-md flex items-center gap-2 transition-all duration-300 hover:shadow-lg"
+                    title="Download Flag"
+                  >
+                    <FiDownload className="text-lg" />
+                    <span className="text-sm font-medium">Download</span>
+                  </button>
+                </div>
               </div>
               <p className="text-center text-gray-500 text-sm mt-2 italic">
                 Official flag of {name.common}
@@ -156,16 +459,25 @@ const CountryDetail = () => {
             </div>
           )}
 
-          {/* Google Maps link */}
-          <div className="mt-10 text-center">
-            <a
-              href={maps?.googleMaps}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-3 rounded-lg shadow transition"
-            >
-              🌐 View on Google Maps
-            </a>
+          {/* Google Maps link and Report button */}
+          <div className="mt-10 text-center space-y-4">
+            <div className="flex flex-col sm:flex-row justify-center gap-y-4 sm:gap-x-4">
+              <a
+                href={maps?.googleMaps}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-3 rounded-lg shadow transition"
+              >
+                🌐 View on Google Maps
+              </a>
+              <button
+                onClick={generateReport}
+                className="inline-block bg-green-600 hover:bg-green-700 text-white font-semibold px-6 py-3 rounded-lg shadow transition flex items-center justify-center gap-2"
+              >
+                <FiFileText className="text-lg" />
+                Generate Report
+              </button>
+            </div>
           </div>
         </div>
       </div>
