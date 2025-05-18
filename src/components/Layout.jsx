@@ -6,6 +6,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { FaHeart, FaUser, FaSignOutAlt, FaGlobe, FaChartBar, FaHome, FaClock } from "react-icons/fa";
 import { useLoginModal } from "../contexts/LoginModalContext";
 import AuthModal from "./AuthModal";
+import Modal from "./Modal";
 
 const DEFAULT_MEMOJI = "https://api.dicebear.com/7.x/bottts/svg?seed=default";
 
@@ -33,6 +34,12 @@ const Layout = ({ children }) => {
   const navigate = useNavigate();
   const [navOpen, setNavOpen] = useState(false);
   const { openLoginModal } = useLoginModal();
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
+  const handleLogout = () => {
+    setShowLogoutConfirm(false);
+    logout();
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex flex-col">
@@ -190,12 +197,17 @@ const Layout = ({ children }) => {
           </Link>
         ))}
         {currentUser ? (
-          <img
-            src={currentUser.profileImg || DEFAULT_MEMOJI}
-            alt="Profile"
-            className="w-8 h-8 rounded-full object-cover border-2 border-blue-200 shadow cursor-pointer"
-            title={currentUser.username}
-          />
+          <button
+            onClick={() => setShowLogoutConfirm(true)}
+            className="flex flex-col items-center text-xs px-2 text-gray-500"
+          >
+            <img
+              src={currentUser.profileImg || DEFAULT_MEMOJI}
+              alt="Profile"
+              className="w-8 h-8 rounded-full object-cover border-2 border-blue-200 shadow"
+              title={currentUser.username}
+            />
+          </button>
         ) : (
           <button
             onClick={openLoginModal}
@@ -206,6 +218,42 @@ const Layout = ({ children }) => {
           </button>
         )}
       </nav>
+
+      {/* Logout Confirmation Modal */}
+      <Modal isOpen={showLogoutConfirm} onClose={() => setShowLogoutConfirm(false)}>
+        <motion.div 
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          exit={{ scale: 0.9, opacity: 0 }}
+          className="p-8 text-center bg-white shadow-2xl rounded-2xl max-w-sm mx-auto"
+        >
+          <div className="mb-6">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <FaSignOutAlt className="text-red-500 text-2xl" />
+            </div>
+            <h3 className="text-xl font-bold text-gray-800 mb-2">Confirm Logout</h3>
+            <p className="text-gray-600">Are you sure you want to logout?</p>
+          </div>
+          <div className="flex justify-center gap-4">
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowLogoutConfirm(false)}
+              className="px-6 py-2.5 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-all duration-200 font-medium"
+            >
+              Cancel
+            </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={handleLogout}
+              className="px-6 py-2.5 bg-red-500 text-white rounded-xl hover:bg-red-600 transition-all duration-200 font-medium shadow-lg shadow-red-200"
+            >
+              Logout
+            </motion.button>
+          </div>
+        </motion.div>
+      </Modal>
 
       {/* Main Content */}
       <main className="flex-grow max-w-7xl mx-auto w-full px-2 sm:px-4 py-4 sm:py-8 mb-16 sm:mb-0">
